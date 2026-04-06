@@ -1,0 +1,25 @@
+{
+  "name": "todo-outbox-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "todo-db",
+    "database.port": "5432",
+    "database.user": "todo_user",
+    "database.password": "todo_pass",
+    "database.dbname": "todo_db",
+    "database.server.name": "todo-service",
+    "table.include.list": "public.outbox",
+    "transforms": "outbox",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.table.field.event.id": "id",
+    "transforms.outbox.table.field.event.key": "aggregate_id",
+    "transforms.outbox.table.field.event.payload": "payload",
+    "transforms.outbox.table.field.event.type": "event_type",
+    "transforms.outbox.route.by.field": "aggregate_type",
+    "transforms.outbox.route.topic.replacement": "todo-service.${routedByValue}",
+    "plugin.name": "pgoutput",
+    "slot.name": "todo_outbox_slot",
+    "publication.name": "todo_outbox_pub"
+  }
+}
