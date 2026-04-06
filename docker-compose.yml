@@ -1,0 +1,193 @@
+version: "3.8"
+
+services:
+
+  # ─── Kafka KRaft (no Zookeeper) ───────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - todo-network
+
+  # ─── Kafka Connect (Debezium) ──────────────────────────────────────────────
+  kafka-connect:
+    image: debezium/connect:2.5
+    container_name: kafka-connect
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: connect-configs
+      OFFSET_STORAGE_TOPIC: connect-offsets
+      STATUS_STORAGE_TOPIC: connect-statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+    depends_on:
+      - kafka
+    networks:
+      - todo-network
+
+  # ─── Auth Service ──────────────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: ../auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+      - "9091:9091"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://auth-db:5432/auth_db
+      SPRING_DATASOURCE_USERNAME: auth_user
+      SPRING_DATASOURCE_PASSWORD: auth_pass
+      SPRING_REDIS_HOST: auth-redis
+      SPRING_REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - auth-db
+      - auth-redis
+    networks:
+      - todo-network
+
+  auth-db:
+    image: postgres:16-alpine
+    container_name: auth-db
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_pass
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    networks:
+      - todo-network
+
+  auth-redis:
+    image: redis:7-alpine
+    container_name: auth-redis
+    networks:
+      - todo-network
+
+  # ─── Todo Service ──────────────────────────────────────────────────────────
+  todo-service:
+    build:
+      context: ../todo-service
+      dockerfile: Dockerfile
+    container_name: todo-service
+    ports:
+      - "8082:8082"
+      - "9092:9092"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://todo-db:5432/todo_db
+      SPRING_DATASOURCE_USERNAME: todo_user
+      SPRING_DATASOURCE_PASSWORD: todo_pass
+      SPRING_REDIS_HOST: todo-redis
+      SPRING_REDIS_PORT: 6379
+    depends_on:
+      - todo-db
+      - todo-redis
+    networks:
+      - todo-network
+
+  todo-db:
+    image: postgres:16-alpine
+    container_name: todo-db
+    environment:
+      POSTGRES_DB: todo_db
+      POSTGRES_USER: todo_user
+      POSTGRES_PASSWORD: todo_pass
+    volumes:
+      - todo-db-data:/var/lib/postgresql/data
+    networks:
+      - todo-network
+
+  todo-redis:
+    image: redis:7-alpine
+    container_name: todo-redis
+    networks:
+      - todo-network
+
+  # ─── Notification Service ─────────────────────────────────────────────────
+  notification-service:
+    build:
+      context: ../notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notification_db
+      SPRING_DATASOURCE_USERNAME: notification_user
+      SPRING_DATASOURCE_PASSWORD: notification_pass
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+    depends_on:
+      - notification-db
+      - kafka
+    networks:
+      - todo-network
+
+  notification-db:
+    image: postgres:16-alpine
+    container_name: notification-db
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: notification_user
+      POSTGRES_PASSWORD: notification_pass
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    networks:
+      - todo-network
+
+  # ─── API Gateway ──────────────────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: ../api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      AUTH_SERVICE_HOST: auth-service
+      AUTH_SERVICE_GRPC_PORT: 9091
+      TODO_SERVICE_HOST: todo-service
+      TODO_SERVICE_GRPC_PORT: 9092
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - auth-service
+      - todo-service
+    networks:
+      - todo-network
+
+volumes:
+  kafka-data:
+  auth-db-data:
+  todo-db-data:
+  notification-db-data:
+
+networks:
+  todo-network:
+    driver: bridge

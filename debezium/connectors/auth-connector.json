@@ -1,0 +1,25 @@
+{
+  "name": "auth-outbox-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "auth-db",
+    "database.port": "5432",
+    "database.user": "auth_user",
+    "database.password": "auth_pass",
+    "database.dbname": "auth_db",
+    "database.server.name": "auth-service",
+    "table.include.list": "public.outbox",
+    "transforms": "outbox",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.table.field.event.id": "id",
+    "transforms.outbox.table.field.event.key": "aggregate_id",
+    "transforms.outbox.table.field.event.payload": "payload",
+    "transforms.outbox.table.field.event.type": "event_type",
+    "transforms.outbox.route.by.field": "aggregate_type",
+    "transforms.outbox.route.topic.replacement": "auth-service.${routedByValue}",
+    "plugin.name": "pgoutput",
+    "slot.name": "auth_outbox_slot",
+    "publication.name": "auth_outbox_pub"
+  }
+}
