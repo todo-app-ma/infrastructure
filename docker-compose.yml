@@ -6,7 +6,6 @@ services:
     image: confluentinc/cp-kafka:7.6.0
     container_name: kafka
     ports:
-      - "9092:9092"
       - "29092:29092"
     environment:
       KAFKA_NODE_ID: 1
@@ -24,6 +23,12 @@ services:
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     volumes:
       - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     networks:
       - todo-network
 
@@ -43,7 +48,8 @@ services:
       OFFSET_STORAGE_REPLICATION_FACTOR: 1
       STATUS_STORAGE_REPLICATION_FACTOR: 1
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     networks:
       - todo-network
 
@@ -62,7 +68,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: auth_pass
       SPRING_REDIS_HOST: auth-redis
       SPRING_REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-default-secret-change-in-production-min-256-bits}
     depends_on:
       - auth-db
       - auth-redis
@@ -95,7 +101,6 @@ services:
     container_name: todo-service
     ports:
       - "8082:8082"
-      - "9092:9092"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://todo-db:5432/todo_db
       SPRING_DATASOURCE_USERNAME: todo_user
@@ -133,19 +138,21 @@ services:
       dockerfile: Dockerfile
     container_name: notification-service
     ports:
-      - "8083:8083"
+      - "8086:8083"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notification_db
       SPRING_DATASOURCE_USERNAME: notification_user
       SPRING_DATASOURCE_PASSWORD: notification_pass
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      MAIL_HOST: ${MAIL_HOST}
-      MAIL_PORT: ${MAIL_PORT}
-      MAIL_USERNAME: ${MAIL_USERNAME}
-      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
     depends_on:
-      - notification-db
-      - kafka
+      notification-db:
+        condition: service_started
+      kafka:
+        condition: service_healthy
     networks:
       - todo-network
 
@@ -169,12 +176,13 @@ services:
     container_name: api-gateway
     ports:
       - "8080:8080"
+    restart: unless-stopped
     environment:
       AUTH_SERVICE_HOST: auth-service
       AUTH_SERVICE_GRPC_PORT: 9091
       TODO_SERVICE_HOST: todo-service
       TODO_SERVICE_GRPC_PORT: 9092
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-default-secret-change-in-production-min-256-bits}
     depends_on:
       - auth-service
       - todo-service
